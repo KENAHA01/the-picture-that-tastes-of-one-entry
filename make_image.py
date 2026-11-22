@@ -1,3 +1,4 @@
+# recorded build 2026-11-23
 #!/usr/bin/env python3
 """Draw one delicious cheeseburger illustration (1024x1024 PNG).
 

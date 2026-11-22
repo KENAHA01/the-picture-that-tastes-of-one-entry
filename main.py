@@ -1,3 +1,4 @@
+# recorded build 2026-11-23
 #!/usr/bin/env python3
 """Entrypoint: copy the prebuilt entry.png into the grader's output dir.
 
