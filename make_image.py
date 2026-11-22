@@ -1,215 +1,191 @@
 #!/usr/bin/env python3
-"""Draw one delicious cheeseburger illustration, 1024x1024 PNG.
+"""Draw one delicious cheeseburger illustration (1024x1024 PNG).
 
-Clean illustration style: warm dark background, one big cheeseburger
-filling the frame, glossy toasted top bun with sesame, melting cheddar
-dripping over a thick grilled patty, fresh lettuce and tomato, soft warm
-light from the upper left, a whisper of steam. No text in the image.
-Drawn at 2x and downscaled for smooth edges.
+Close-up of a single big cheeseburger on a warm dark background:
+glossy toasted top bun with sesame, melting cheddar dripping over a
+thick grilled patty, fresh lettuce, red tomato, soft steam, warm light
+from the top-left. Clean illustration style, no text anywhere.
+Drawn at 2048 and downscaled to 1024 for smooth edges.
 """
 import math
-import os
 import random
-
 from PIL import Image, ImageDraw, ImageFilter
 
-S = 2048  # working size, downscaled to 1024
-OUT = 1024
-HERE = os.path.dirname(os.path.abspath(__file__))
+S = 2048
 random.seed(7)
+OUT = "/home/hatch/workspace/makefun/the-picture-that-tastes-of-one-entry/entry.png"
+
+
+def lerp(a, b, t):
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
 
 
 def vgrad(w, h, top, bottom):
-    img = Image.new("RGB", (1, h))
-    px = img.load()
+    img = Image.new("RGB", (w, h))
+    d = ImageDraw.Draw(img)
     for y in range(h):
-        t = y / max(1, h - 1)
-        px[0, y] = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
-    return img.resize((w, h))
+        d.line([(0, y), (w, y)], fill=lerp(top, bottom, y / max(h - 1, 1)))
+    return img
 
 
-def ellipse_arc_points(cx, cy, rx, ry, a0, a1, n=120):
-    pts = []
-    for i in range(n + 1):
-        a = math.radians(a0 + (a1 - a0) * i / n)
-        pts.append((cx + rx * math.cos(a), cy + ry * math.sin(a)))
-    return pts
+def masked_gradient(size, mask_draw_fn, top, bottom):
+    """Vertical gradient clipped to the shape drawn by mask_draw_fn."""
+    mask = Image.new("L", size, 0)
+    md = ImageDraw.Draw(mask)
+    mask_draw_fn(md)
+    grad = vgrad(size[0], size[1], top, bottom)
+    layer = Image.new("RGBA", size, (0, 0, 0, 0))
+    layer.paste(grad, (0, 0))
+    layer.putalpha(mask)
+    return layer, mask
 
 
-def wave_edge(x0, x1, y_base, amp, waves, n=120, phase=0.0):
-    pts = []
-    for i in range(n + 1):
-        x = x0 + (x1 - x0) * i / n
-        y = y_base + amp * math.sin(2 * math.pi * waves * i / n + phase)
-        pts.append((x, y))
-    return pts
+def clip_alpha(layer, mask):
+    layer.putalpha(Image.composite(layer.split()[3], Image.new("L", layer.size, 0), mask))
+    return layer
 
 
-def apply_mask(base, mask, fill):
-    """Paste fill (RGB tuple or RGB image) through an L mask."""
-    if isinstance(fill, tuple):
-        layer = Image.new("RGB", base.size, fill)
-    else:
-        layer = fill
-    base.paste(layer, (0, 0), mask)
+# ---------- background: dark warm gradient + glow behind the burger ----------
+img = vgrad(S, S, (43, 23, 10), (18, 11, 5)).convert("RGBA")
 
+glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+gd = ImageDraw.Draw(glow)
+gd.ellipse([380, 420, 1670, 1780], fill=(150, 88, 34, 255))
+glow = glow.filter(ImageFilter.GaussianBlur(260))
+img.alpha_composite(glow)
 
-def main():
-    img = Image.new("RGB", (S, S))
-    # --- background: warm dark vertical gradient ---
-    img.paste(vgrad(S, S, (26, 15, 10), (52, 30, 17)), (0, 0))
-    d = ImageDraw.Draw(img, "RGBA")
+# ---------- soft shadow under the burger ----------
+sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+sd = ImageDraw.Draw(sh)
+sd.ellipse([500, 1530, 1550, 1710], fill=(0, 0, 0, 150))
+sh = sh.filter(ImageFilter.GaussianBlur(55))
+img.alpha_composite(sh)
 
-    # warm glow behind the burger
-    glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    gd.ellipse((260, 260, 1788, 1900), fill=(122, 62, 22, 110))
-    glow = glow.filter(ImageFilter.GaussianBlur(180))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), glow).convert("RGB"), (0, 0))
-    d = ImageDraw.Draw(img, "RGBA")
+# ---------- bottom bun ----------
+def bun_mask(md):
+    md.rounded_rectangle([640, 1240, 1410, 1530], radius=110, fill=255)
 
-    # --- soft shadow under the burger ---
-    sh = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(sh)
-    sd.ellipse((330, 1700, 1718, 1860), fill=(0, 0, 0, 150))
-    sh = sh.filter(ImageFilter.GaussianBlur(60))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), sh).convert("RGB"), (0, 0))
+layer, _ = masked_gradient((S, S), bun_mask, (226, 154, 69), (158, 96, 30))
+img.alpha_composite(layer)
+ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+od = ImageDraw.Draw(ov)
+od.rounded_rectangle([640, 1420, 1410, 1530], radius=90, fill=(90, 48, 12, 110))
+ov = ov.filter(ImageFilter.GaussianBlur(18))
+img.alpha_composite(ov)
+hl = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+hd = ImageDraw.Draw(hl)
+hd.ellipse([700, 1220, 1150, 1400], fill=(255, 225, 160, 70))
+hl = hl.filter(ImageFilter.GaussianBlur(40))
+img.alpha_composite(hl)
 
-    # ================= BOTTOM BUN =================
-    bun_mask = Image.new("L", (S, S), 0)
-    bd = ImageDraw.Draw(bun_mask)
-    bd.rounded_rectangle((330, 1390, 1718, 1780), radius=170, fill=255)
-    apply_mask(img, bun_mask, vgrad(S, S, (216, 143, 58), (158, 96, 28)))
-    d = ImageDraw.Draw(img, "RGBA")
-    # toasted top rim of bottom bun
-    d.rounded_rectangle((330, 1390, 1718, 1460), radius=60, fill=(232, 164, 74, 255))
-    # soft bottom shade
-    d.rounded_rectangle((330, 1680, 1718, 1780), radius=80, fill=(120, 70, 20, 90))
+# ---------- patty: thick, grilled ----------
+def patty_mask(md):
+    md.rounded_rectangle([590, 1075, 1460, 1275], radius=70, fill=255)
 
-    # ================= PATTY =================
-    patty_mask = Image.new("L", (S, S), 0)
-    pd = ImageDraw.Draw(patty_mask)
-    top = wave_edge(300, 1748, 1150, 14, 3)
-    bot = wave_edge(300, 1748, 1445, 14, 3, phase=1.2)
-    pd.polygon(top + list(reversed(bot)), fill=255)
-    apply_mask(img, patty_mask, vgrad(S, S, (122, 68, 32), (82, 44, 20)))
-    # patty texture: speckles + grill marks, clipped by patty mask
-    tex = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    td = ImageDraw.Draw(tex)
-    for _ in range(300):
-        x = random.randint(310, 1738)
-        y = random.randint(1160, 1435)
-        r = random.randint(3, 8)
-        td.ellipse((x - r, y - r, x + r, y + r),
-                   fill=(48, 24, 10, random.randint(40, 100)))
-    for i in range(7):
-        x = 420 + i * 190
-        td.line((x, 1160, x - 90, 1440), fill=(40, 20, 8, 90), width=14)
-    # glossy top edge of patty
-    td.rectangle((300, 1145, 1748, 1175), fill=(150, 84, 38, 120))
-    tex.putalpha(Image.composite(tex.split()[3], Image.new("L", (S, S), 0), patty_mask))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), tex).convert("RGB"), (0, 0))
-    d = ImageDraw.Draw(img, "RGBA")
+layer, pmask = masked_gradient((S, S), patty_mask, (122, 66, 30), (66, 36, 16))
+img.alpha_composite(layer)
 
-    # ================= TOMATO (peeks out at the sides) =================
-    for (x0, x1) in ((255, 700), (1350, 1795)):
-        d.rounded_rectangle((x0, 1045, x1, 1175), radius=55, fill=(214, 48, 39, 255))
-        d.rounded_rectangle((x0 + 26, 1068, x1 - 26, 1152), radius=40,
-                            fill=(232, 84, 66, 255))
+gm = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+g = ImageDraw.Draw(gm)
+for x0 in range(650, 1450, 130):
+    g.line([(x0, 1080), (x0 + 90, 1270)], fill=(30, 16, 6, 200), width=26)
+img.alpha_composite(clip_alpha(gm, pmask))
 
-    # ================= CHEESE (melting, dripping over the patty) =================
-    cheese_mask = Image.new("L", (S, S), 0)
-    cd = ImageDraw.Draw(cheese_mask)
-    top = wave_edge(305, 1743, 960, 10, 2)
-    bot = wave_edge(305, 1743, 1105, 26, 4, phase=0.6)
-    cd.polygon(top + list(reversed(bot)), fill=255)
-    # drips hanging below the wavy edge
-    for (cx, length, w) in ((480, 120, 95), (830, 165, 105), (1180, 135, 95),
-                            (1520, 150, 100)):
-        cd.rounded_rectangle((cx - w // 2, 1080, cx + w // 2, 1080 + length),
-                             radius=w // 2, fill=255)
-        cd.ellipse((cx - w // 2, 1080 + length - w // 2,
-                    cx + w // 2, 1080 + length + w // 2), fill=255)
-    apply_mask(img, cheese_mask, vgrad(S, S, (255, 176, 46), (240, 138, 18)))
-    d = ImageDraw.Draw(img, "RGBA")
-    # cheese top sheen
-    d.polygon(wave_edge(305, 1743, 985, 8, 2) +
-              list(reversed(wave_edge(305, 1743, 1030, 8, 2, phase=0.6))),
-              fill=(255, 205, 92, 255))
+dots = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+dd = ImageDraw.Draw(dots)
+for _ in range(260):
+    x = random.randint(620, 1430)
+    y = random.randint(1095, 1255)
+    r = random.randint(3, 9)
+    c = (52, 28, 12, 120) if random.random() < 0.5 else (170, 104, 52, 110)
+    dd.ellipse([x - r, y - r, x + r, y + r], fill=c)
+img.alpha_composite(clip_alpha(dots, pmask))
 
-    # ================= LETTUCE (fresh, wavy, sticks out past the bun) =================
-    let_mask = Image.new("L", (S, S), 0)
-    ld = ImageDraw.Draw(let_mask)
-    top = wave_edge(215, 1833, 860, 34, 5)
-    bot = wave_edge(215, 1833, 985, 30, 5, phase=0.9)
-    ld.polygon(top + list(reversed(bot)), fill=255)
-    apply_mask(img, let_mask, vgrad(S, S, (110, 190, 74), (62, 138, 44)))
-    d = ImageDraw.Draw(img, "RGBA")
-    # lighter ruffled top edge
-    d.polygon(wave_edge(215, 1833, 872, 34, 5) +
-              list(reversed(wave_edge(215, 1833, 920, 30, 5, phase=0.9))),
-              fill=(140, 208, 96, 255))
-    # a few darker leaf folds
-    for x in (420, 760, 1120, 1480):
-        d.arc((x - 90, 830, x + 90, 1000), start=200, end=340,
-              fill=(46, 110, 34, 160), width=14)
+# ---------- cheese: bright cheddar draped over the patty, dripping ----------
+ch = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+cd = ImageDraw.Draw(ch)
+cd.rectangle([610, 1005, 1440, 1120], fill=(246, 168, 33, 255))
+cd.rectangle([610, 1005, 1440, 1045], fill=(250, 196, 77, 255))
+cd.line([(610, 1120), (1440, 1120)], fill=(214, 128, 18, 255), width=6)
+# rounded drips of varying length hanging below the band
+for (x, length) in [(660, 70), (760, 130), (850, 60), (950, 150), (1040, 80),
+                    (1130, 140), (1220, 65), (1310, 120), (1400, 75)]:
+    cd.rounded_rectangle([x - 26, 1100, x + 26, 1100 + length], radius=26,
+                         fill=(246, 168, 33, 255))
+img.alpha_composite(ch)
 
-    # ================= TOP BUN DOME =================
-    dome_mask = Image.new("L", (S, S), 0)
-    dd = ImageDraw.Draw(dome_mask)
-    arc = ellipse_arc_points(1024, 900, 752, 640, 180, 360)
-    dd.polygon(arc + [(1776, 900), (272, 900)], fill=255)
-    apply_mask(img, dome_mask, vgrad(S, S, (238, 176, 92), (176, 106, 38)))
-    # warm highlight, top-left of the dome, clipped to the dome
-    hl = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    hd = ImageDraw.Draw(hl)
-    hd.ellipse((430, 300, 1080, 640), fill=(255, 226, 170, 110))
-    hl = hl.filter(ImageFilter.GaussianBlur(90))
-    hl.putalpha(Image.composite(hl.split()[3], Image.new("L", (S, S), 0), dome_mask))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), hl).convert("RGB"), (0, 0))
-    # darker rim along the dome's bottom edge (thin band, clipped to dome)
-    rim = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    rd = ImageDraw.Draw(rim)
-    rd.rectangle((272, 845, 1776, 905), fill=(140, 82, 26, 130))
-    rim.putalpha(Image.composite(rim.split()[3], Image.new("L", (S, S), 0), dome_mask))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), rim).convert("RGB"), (0, 0))
-    d = ImageDraw.Draw(img, "RGBA")
-    # sesame seeds
-    seeds = [(560, 470), (700, 400), (880, 360), (1080, 350), (1280, 380),
-             (1440, 450), (1520, 560), (480, 580), (640, 560), (820, 470),
-             (1000, 470), (1180, 500), (1360, 580), (900, 600), (1100, 620),
-             (760, 680), (1300, 700), (620, 700)]
-    for (x, y) in seeds:
-        d.ellipse((x - 26, y - 13, x + 26, y + 13), fill=(247, 223, 168, 255),
-                  outline=(200, 160, 90, 255), width=3)
-        d.ellipse((x - 26, y - 13, x + 26, y + 2), fill=(255, 240, 200, 255))
+# ---------- tomato: two red slices peeking out ----------
+tm = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+td = ImageDraw.Draw(tm)
+td.rounded_rectangle([600, 945, 1060, 1035], radius=45, fill=(207, 47, 36, 255))
+td.rounded_rectangle([990, 945, 1450, 1035], radius=45, fill=(207, 47, 36, 255))
+td.ellipse([640, 962, 1020, 1018], fill=(232, 84, 63, 255))
+td.ellipse([1030, 962, 1410, 1018], fill=(232, 84, 63, 255))
+img.alpha_composite(tm)
 
-    # ================= STEAM (thin wisps above the bun) =================
-    steam = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(steam)
-    for (x0, amp, phase) in ((760, 46, 0.0), (1024, 56, 1.4), (1290, 42, 2.6)):
-        pts = []
-        for i in range(41):
-            y = 300 - i * 5
-            x = x0 + amp * math.sin(i / 40 * 2.4 * math.pi + phase) * (1 - i / 60)
-            pts.append((x, y))
-        sd.line(pts, fill=(255, 244, 230, 70), width=16, joint="curve")
-    steam = steam.filter(ImageFilter.GaussianBlur(12))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), steam).convert("RGB"), (0, 0))
+# ---------- lettuce: wavy fresh green leaf ----------
+top_y = 830
+pts = [(x, top_y) for x in range(580, 1471, 20)]
+for x in range(1470, 579, -20):
+    wave = 930 + int(26 * math.sin((x - 580) / 1470 * math.pi * 7))
+    pts.append((x, wave))
+lt = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+ld = ImageDraw.Draw(lt)
+ld.polygon(pts, fill=(88, 160, 44, 255))
+band = [(x, top_y + 34) for x in range(580, 1471, 20)]
+for x in range(1470, 579, -20):
+    wave = 960 + int(26 * math.sin((x - 580) / 1470 * math.pi * 7))
+    band.append((x, wave))
+ld.polygon(band, fill=(56, 122, 30, 255))
+img.alpha_composite(lt)
 
-    # ================= WARM LIGHT from upper left =================
-    light = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    ld2 = ImageDraw.Draw(light)
-    ld2.ellipse((-500, -500, 1100, 900), fill=(255, 214, 150, 46))
-    light = light.filter(ImageFilter.GaussianBlur(160))
-    img.paste(Image.alpha_composite(img.convert("RGBA"), light).convert("RGB"), (0, 0))
+# ---------- top bun: golden dome ----------
+def dome_mask(md):
+    md.pieslice([545, 400, 1505, 1300], start=180, end=360, fill=255)
 
-    # downscale to 1024x1024 and save
-    out = img.resize((OUT, OUT), Image.LANCZOS)
-    path = os.path.join(HERE, "entry.png")
-    out.save(path, "PNG", optimize=True)
-    print("wrote", path, out.size, os.path.getsize(path), "bytes")
+layer, dmask = masked_gradient((S, S), dome_mask, (238, 172, 84), (176, 106, 32))
+img.alpha_composite(layer)
 
+band = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+bd = ImageDraw.Draw(band)
+bd.pieslice([545, 560, 1505, 1460], start=180, end=360, fill=(110, 58, 14, 70))
+band = clip_alpha(band, dmask).filter(ImageFilter.GaussianBlur(25))
+img.alpha_composite(band)
 
-if __name__ == "__main__":
-    main()
+hl2 = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+h2d = ImageDraw.Draw(hl2)
+h2d.ellipse([640, 380, 1120, 640], fill=(255, 232, 170, 90))
+hl2 = hl2.filter(ImageFilter.GaussianBlur(60))
+img.alpha_composite(clip_alpha(hl2, dmask))
+
+# sesame seeds
+def seed(angle):
+    t = Image.new("RGBA", (72, 44), (0, 0, 0, 0))
+    td = ImageDraw.Draw(t)
+    td.ellipse([6, 6, 66, 38], fill=(244, 220, 168, 255))
+    td.ellipse([12, 10, 60, 30], fill=(252, 238, 200, 255))
+    return t.rotate(angle, expand=True, resample=Image.BICUBIC)
+
+positions = [
+    (760, 520, 20), (980, 470, -15), (1180, 500, 35), (700, 660, -30),
+    (900, 600, 10), (1120, 640, -20), (1300, 620, 25), (820, 740, 40),
+    (1050, 760, -35), (1260, 760, 15), (700, 560, 55), (1400, 700, -10),
+]
+for (x, y, a) in positions:
+    t = seed(a)
+    img.alpha_composite(t, (x - t.width // 2, y - t.height // 2))
+
+# ---------- thin steam rising above the bun ----------
+st = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+std = ImageDraw.Draw(st)
+for cx, amp, ph in [(850, 34, 0.0), (1024, 44, 1.6), (1200, 30, 3.1)]:
+    pts = [(cx + amp * math.sin(ph + (y - 240) / 70.0), y) for y in range(240, 430, 8)]
+    std.line(pts, fill=(255, 255, 255, 70), width=18, joint="curve")
+st = st.filter(ImageFilter.GaussianBlur(14))
+img.alpha_composite(st)
+
+# ---------- tighten the frame so the burger fills it, then downscale ----------
+img = img.crop((300, 200, 1750, 1650)).convert("RGB").resize((1024, 1024), Image.LANCZOS)
+img.save(OUT, optimize=True)
+import os
+print("saved", OUT, os.path.getsize(OUT), "bytes")
